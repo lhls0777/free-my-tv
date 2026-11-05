@@ -410,6 +410,16 @@
   function renderQuotes() {
     var q = $('quotes'), coins = Data.activeCoins();
     q.innerHTML = '';
+    if (Prefs.perf()) {
+      // The performance card takes the quotes' place: processor, memory and frame rate, at the end of the tab row.
+      var parts = [['CPU', percent(perf.cpu)], ['RAM', percent(memUse())], ['FPS', isNaN(perf.fps) ? '—' : String(Math.round(perf.fps))]];
+      for (var p = 0; p < parts.length; p++) {
+        var part = el('span', 'q', q);
+        el('span', 'k', part, parts[p][0]);
+        el('span', '', part, parts[p][1]);
+      }
+      return;
+    }
     for (var i = 0; i < coins.length; i++) {
       var item = el('span', 'q', q);
       coin(coins[i], item);
@@ -623,7 +633,7 @@
     var d = $('drawer');
     var old = d.querySelectorAll('.panel');
     for (var o = 0; o < old.length; o++) d.removeChild(old[o]);
-    var wx = Prefs.weather(), coins = Data.activeCoins(), qt = coins.length > 0;
+    var wx = Prefs.weather(), coins = Data.activeCoins(), pf = Prefs.perf(), qt = pf || coins.length > 0;
     var split = 80 + 1760 * 0.585;
     if (wx) {
       var w = el('div', 'panel glass', d);
@@ -638,7 +648,112 @@
       var left = wx ? split + 16 : 80;
       q.style.left = left + 'px';
       q.style.width = (1840 - left) + 'px';
-      renderPrices(q, coins);
+      if (pf) {
+        q.id = 'perf';
+        renderPerf(q);
+      } else {
+        renderPrices(q, coins);
+      }
+    }
+  }
+
+  // MARK: - Performance: the TV's processor and memory (TV.stats) and this screen's frame rate
+
+  var perf = {cpu: NaN, memTotal: NaN, memAvailable: NaN, fps: NaN, heap: NaN, ok: false, tried: false};
+  var perfTimer = null, perfFrames = 0, perfSince = 0, perfLoop = false;
+
+  function percent(v) { return isNaN(v) ? '—' : Math.round(v) + '%'; }
+
+  function memUse() { return perf.memTotal > 0 ? 100 * (1 - perf.memAvailable / perf.memTotal) : NaN; }
+
+  /** kB (or bytes with `bytes`) in GB or MB, with the viewer's decimal separator. */
+  function size(v, bytes) {
+    var mb = bytes ? v / 1048576 : v / 1024;
+    if (isNaN(mb)) return '—';
+    if (mb < 1000) return Math.round(mb) + ' MB';
+    var gb = mb / 1024, text = gb.toFixed(1);
+    if (typeof Intl !== 'undefined') {
+      try { text = gb.toLocaleString(I18N.locale(), {minimumFractionDigits: 1, maximumFractionDigits: 1}); } catch (e) {}
+    }
+    return text + ' GB';
+  }
+
+  /** Green, then orange from 60%, red from 85% (for the frame rate: below 50 and 30 fps). */
+  function level(v, fps) {
+    if (isNaN(v)) return '';
+    if (fps) return v >= 50 ? ' up' : v >= 30 ? ' mid' : ' down';
+    return v < 60 ? ' up' : v < 85 ? ' mid' : ' down';
+  }
+
+  function renderPerf(card) {
+    card.innerHTML = '';
+    el('div', 'head', card, tr('Performance'));
+    el('div', 'side', card, perf.ok ? tr('perf|Live') : perf.tried ? tr('No data from the TV') : '');
+    var used = perf.memTotal > 0 ? perf.memTotal - perf.memAvailable : NaN;
+    var rows = [
+      ['CPU', '', percent(perf.cpu), level(perf.cpu)],
+      [tr('Memory'), isNaN(used) ? '' : trf('perf|{used} of {total}', {used: size(used), total: size(perf.memTotal)}), percent(memUse()), level(memUse())],
+      [tr('Frame rate'), '', isNaN(perf.fps) ? '—' : Math.round(perf.fps) + ' fps', level(perf.fps, true)]
+    ];
+    if (!isNaN(perf.heap)) rows.push([tr('This app'), '', size(perf.heap, true), '']);
+    for (var j = 0; j < rows.length; j++) {
+      var row = el('div', 'coin', card);
+      row.style.top = (86 + 52 * j) + 'px';
+      el('span', 'n', row, rows[j][0]);
+      if (rows[j][1]) el('span', 'p', row, rows[j][1]);
+      if (rows[j][2]) el('span', 'c' + rows[j][3], row, rows[j][2]);
+    }
+  }
+
+  /** Counts the frames the screen draws, a second at a time. */
+  function perfFrame(now) {
+    if (!perfLoop) return;
+    perfFrames++;
+    if (!perfSince) perfSince = now;
+    else if (now - perfSince >= 1000) {
+      perf.fps = Math.min(60, perfFrames * 1000 / (now - perfSince));
+      perfFrames = 0;
+      perfSince = now;
+    }
+    window.requestAnimationFrame(perfFrame);
+  }
+
+  function pollPerf() {
+    TV.stats(function (s) {
+      perf.tried = true;
+      perf.ok = !!s && typeof s.cpu === 'number';
+      perf.cpu = s && typeof s.cpu === 'number' ? s.cpu : NaN;
+      perf.memTotal = s && s.memTotal > 0 ? s.memTotal : NaN;
+      perf.memAvailable = s && s.memTotal > 0 ? s.memAvailable : NaN;
+      // Chromium's own count of this page's JavaScript memory (not on every TV).
+      var m = window.performance && window.performance.memory;
+      perf.heap = m && m.usedJSHeapSize ? m.usedJSHeapSize : NaN;
+      showPerf();
+    });
+  }
+
+  /** New numbers on screen: the tab row's, and the card's when the drawer has it. */
+  function showPerf() {
+    if (!Prefs.perf()) return;
+    renderQuotes();
+    var card = $('perf');
+    if (card) renderPerf(card);
+  }
+
+  /** Measures only while the performance card is on and the app is on screen. */
+  function syncPerf() {
+    var on = Prefs.perf() && !document.hidden;
+    if (on && !perfTimer) {
+      perfLoop = true;
+      perfFrames = 0;
+      perfSince = 0;
+      if (window.requestAnimationFrame) window.requestAnimationFrame(perfFrame);
+      pollPerf();
+      perfTimer = setInterval(pollPerf, 2000);
+    } else if (!on && perfTimer) {
+      clearInterval(perfTimer);
+      perfTimer = null;
+      perfLoop = false;
     }
   }
 
@@ -771,6 +886,8 @@
         step: function (d) { if (d >= 0) openCities(); }},
       {label: tr('Forecast'), value: Prefs.forecast() === 'days' ? tr('Next days') : tr('Next hours'),
         step: function (d) { cycle('forecast', ['hours', 'days'], Prefs.forecast(), d); renderPanels(); }},
+      {label: tr('Performance widget'), toggle: Prefs.perf(),
+        step: function () { Prefs.set('perf', !Prefs.perf()); syncPerf(); renderQuotes(); renderPanels(); }},
       {label: tr('Quotes widget'), toggle: Prefs.quotes(),
         step: function () { Prefs.set('quotes', !Prefs.quotes()); Data.settingsChanged(); }}
     ];
@@ -1694,6 +1811,7 @@
   document.addEventListener('webOSRelaunch', reopened);   // LG: opened again while running
   window.addEventListener('appcontrol', reopened);        // Samsung: the same
   document.addEventListener('visibilitychange', function () {
+    syncPerf();   // the frame count and the TV's numbers only while the app is on screen
     if (document.hidden) { hideSaver(); hideAmbient(); return; }
     idleAt = Date.now();
     loadApps(function () { renderShelf(); renderDrawer(); updateFocus(); Data.refresh(); });
@@ -1712,6 +1830,7 @@
     restInDrawer();
     Data.refresh();
   });
+  syncPerf();
   setInterval(function () {
     checkNight();
     Data.refresh();

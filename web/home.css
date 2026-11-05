@@ -150,6 +150,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 #quotes .q { display: inline-block; margin-left: 24px; }
 #quotes svg { width: 15px; height: 15px; vertical-align: -1px; margin-right: 6px; fill: rgba(142, 142, 147, 0.7); }
+#quotes .k { margin-right: 7px; font-size: 17px; font-weight: 600; letter-spacing: 0.04em; opacity: 0.75; }
 #quotes.hide { opacity: 0; }
 .night #quotes { color: rgba(245, 245, 247, 0.62); }
 .night #quotes svg { fill: rgba(245, 245, 247, 0.55); }
@@ -460,6 +461,19 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .night #prices .coin svg { fill: rgba(255, 255, 255, 0.8); }
 .night #prices .up { color: #30D158; background: rgba(48, 209, 88, 0.2); }
 .night #prices .down { color: #FF453A; background: rgba(255, 69, 58, 0.2); }
+
+/* The performance card, in the quotes' place: the same rows, with a name, a detail and a coloured value. */
+#perf .coin { position: absolute; left: 34px; right: 34px; height: 40px; font-size: 29px; font-weight: 500; white-space: nowrap; }
+#perf .coin .n { position: absolute; left: 0; top: 0; }
+#perf .coin .p { position: absolute; right: 148px; top: 3px; font-size: 24px; color: #6E6E73; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+#perf .coin .c { position: absolute; right: 0; top: 2px; width: 128px; height: 34px; line-height: 34px; border-radius: 17px; text-align: center; font-size: 21px; font-weight: 600; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+#perf .up { color: #248A3D; background: rgba(36, 138, 61, 0.2); }
+#perf .mid { color: #C93400; background: rgba(255, 149, 0, 0.2); }
+#perf .down { color: #D70015; background: rgba(215, 0, 21, 0.2); }
+.night #perf .coin .p { color: rgba(255, 255, 255, 0.6); }
+.night #perf .up { color: #30D158; background: rgba(48, 209, 88, 0.2); }
+.night #perf .mid { color: #FF9F0A; background: rgba(255, 159, 10, 0.2); }
+.night #perf .down { color: #FF453A; background: rgba(255, 69, 58, 0.2); }
 
 /* MARK: - Sheets over the home screen: All Apps, Settings, Shelf, Language, About */
 

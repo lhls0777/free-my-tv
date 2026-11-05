@@ -605,6 +605,38 @@ var TV = (function () {
     /** The TV's model, firmware, system, IP address and this app's version, for About this TV. */
     about: about,
 
+    /**
+     * The TV's processor and memory use, for the performance card: done({cpu: percent, cores, memTotal,
+     * memAvailable: kB}) or null. LG: our JS service reads /proc (webos/service). Samsung: Tizen's systeminfo. A
+     * browser: made-up numbers that move, for the preview.
+     */
+    stats: function (done) {
+      if (webos) {
+        luna('luna://' + self + '.service/stats', {}, function (res) {
+          done(res && typeof res.cpu === 'number' ? res : null);
+        });
+        return;
+      }
+      if (samsung) {
+        try {
+          var info = window.tizen.systeminfo, out = {};
+          out.memTotal = info.getTotalMemory() / 1024;
+          out.memAvailable = info.getAvailableMemory() / 1024;
+          info.getPropertyValue('CPU', function (cpu) {
+            out.cpu = cpu.load * 100;
+            done(out);
+          }, function () { done(out); });
+        } catch (e) {
+          done(null);
+        }
+        return;
+      }
+      var t = Date.now() / 1000;
+      setTimeout(function () {
+        done({cpu: 14 + 9 * Math.abs(Math.sin(t / 5)), cores: 4, memTotal: 2516582, memAvailable: 1140000 - 60000 * Math.sin(t / 9)});
+      }, 0);
+    },
+
     /** LG: keeps the TV's screensaver away while ours will take over (`hold` says when). */
     holdScreenSaver: holdScreenSaver,
 
