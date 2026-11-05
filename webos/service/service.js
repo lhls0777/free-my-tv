@@ -1,9 +1,11 @@
 /*
- * Free My TV's service on LG webOS: one call to the TV's remote control API (127.0.0.1:3000) for the web app.
+ * Free My TV's service on LG webOS: one call to the TV's remote control API (127.0.0.1:3000) for the web app, and the
+ * TV's processor and memory use for the performance card (stats: from /proc, which the page can't read).
  * Newer webOS gives each app's page its own origin (file://io.freemytv-webos), and the API closes any connection
  * that isn't from file:// ("invalid origin"); from here the handshake says file://.
  * Plain ES5 with Node's net only: older webOS ships an old Node.
  */
+var fs = require('fs');
 var net = require('net');
 var Service = require('webos-service');
 
@@ -105,4 +107,59 @@ service.register('ssap', function (message) {
       message.respond(result);
     }
   });
+});
+
+/** The processor's time so far, from the first line of /proc/stat: {idle, total} in clock ticks. */
+function cpuTimes() {
+  var line = fs.readFileSync('/proc/stat', 'utf8').split('\n')[0], parts = line.split(/\s+/), idle = 0, total = 0;
+  for (var i = 1; i < parts.length; i++) {
+    var n = parseInt(parts[i], 10);
+    if (isNaN(n)) continue;
+    total += n;
+    if (i === 4 || i === 5) idle += n;   // idle and iowait
+  }
+  return {idle: idle, total: total};
+}
+
+/** The memory, in kB, from /proc/meminfo: {total, available}. */
+function memory() {
+  var lines = fs.readFileSync('/proc/meminfo', 'utf8').split('\n'), v = {};
+  for (var i = 0; i < lines.length; i++) {
+    var m = /^(\w+):\s+(\d+)/.exec(lines[i]);
+    if (m) v[m[1]] = parseInt(m[2], 10);
+  }
+  // MemAvailable is there from Linux 3.14; before it, what's free plus the caches the kernel gives back.
+  var available = v.MemAvailable !== undefined ? v.MemAvailable : (v.MemFree || 0) + (v.Buffers || 0) + (v.Cached || 0);
+  return {total: v.MemTotal || 0, available: available};
+}
+
+function cores() {
+  var n = (fs.readFileSync('/proc/stat', 'utf8').match(/^cpu\d+/gm) || []).length;
+  return n || 1;
+}
+
+var lastCpu = null, lastAt = 0;
+
+service.register('stats', function (message) {
+  var first;
+  try { first = cpuTimes(); } catch (e) {
+    message.respond({returnValue: false, errorText: 'No /proc/stat: ' + e.message});
+    return;
+  }
+  // The use since the last call, when there was one a moment ago (the card asks every 2 s); else over 500 ms now.
+  var recent = lastCpu && Date.now() - lastAt < 10000;
+  setTimeout(function () {
+    var now = cpuTimes(), from = recent ? lastCpu : first;
+    var total = now.total - from.total, idle = now.idle - from.idle;
+    lastCpu = now;
+    lastAt = Date.now();
+    var result = {returnValue: true, cpu: total > 0 ? Math.max(0, Math.min(100, 100 * (1 - idle / total))) : null};
+    try { result.cores = cores(); } catch (e) {}
+    try {
+      var mem = memory();
+      result.memTotal = mem.total;
+      result.memAvailable = mem.available;
+    } catch (e) {}
+    message.respond(result);
+  }, recent ? 0 : 500);
 });
